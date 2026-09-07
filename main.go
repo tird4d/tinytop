@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 )
 
 type Process struct {
@@ -47,24 +49,73 @@ func main() {
 		input := strings.TrimSpace(scanner.Text())
 
 		fmt.Println(input)
-	}
 
-	ps, _ := os.ReadDir("/proc")
-
-	var processes []Process
-
-	for p := range ps {
-		MyProcess, err := ProcessParser(p)
-		if err != nil {
+		parts := strings.Fields(input)
+		if len(parts) == 0 {
 			continue
-		} else {
-			processes = append(processes, MyProcess)
+		}
+
+		switch parts[0] {
+		case "list":
+			ProcessList()
+
+		case "stop", "terminate":
+			KillProcess(parts)
+
+		case "quit", "exit":
+			return
+
+		default:
+			fmt.Println("unknown command:", parts[0])
 		}
 
 	}
 
-	PrintProcess(processes)
+}
 
+func RefreshProcessList() {
+	for {
+		ProcessList()
+		time.Sleep(5 * time.Second)
+	}
+
+}
+
+func ProcessList() {
+	ps, _ := os.ReadDir("/proc")
+	var processes []Process
+
+	for _, p := range ps {
+		fmt.Println(p)
+		r, err := strconv.Atoi(p.Name())
+		if err != nil {
+			continue
+		}
+
+		processId := r
+
+		MyProcess, err := ProcessParser(processId)
+		if err != nil {
+			// fmt.Println(err.Error())
+			continue
+		}
+
+		processes = append(processes, MyProcess)
+
+	}
+
+	slices.SortFunc(processes, func(a, b Process) int {
+		switch {
+		case a.PID > b.PID:
+			return -1
+		case a.PID < b.PID:
+			return 1
+		default:
+			return 0
+		}
+	})
+
+	PrintProcess(processes)
 }
 
 func ProcessParser(pid int) (Process, error) {
@@ -138,5 +189,27 @@ func PrintProcess(processes []Process) {
 	if err := w.Flush(); err != nil {
 		fmt.Fprintln(os.Stderr, "flush process table:", err)
 	}
+
+}
+
+func KillProcess(parts []string) {
+	if len(parts) != 2 {
+		fmt.Printf("usage: %s <pid>\n", parts[0])
+		return
+	}
+
+	pid, err := strconv.Atoi(parts[1])
+	if err != nil {
+		fmt.Println("invalid PID:", parts[1])
+		return
+	}
+	p, err := os.FindProcess(pid)
+	err = p.Kill()
+
+	if err != nil {
+		fmt.Printf("Cannot kill the process %s\n", err.Error())
+	}
+
+	fmt.Printf("%s requested for PID %d\n", parts[0], pid)
 
 }
